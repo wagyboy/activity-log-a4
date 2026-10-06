@@ -1,0 +1,60 @@
+name: A4 Quality Checks
+
+on:
+  push:
+    branches-ignore: [master]
+  pull_request:
+    branches: [master]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit tests (Node.js ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    env:
+      TZ: Asia/Taipei
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Run unit tests
+        id: tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          node --test --test-reporter=tap tests/*.test.js | tee test-results.txt
+
+      - name: Record test outcome
+        if: always()
+        shell: bash
+        env:
+          NODE_VERSION: ${{ matrix.node }}
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          printf '## Unit tests - Node.js %s\n\nOutcome: %s\n\nSee the test log artifact for individual results.\n' "$NODE_VERSION" "$TEST_OUTCOME" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-log-node-${{ matrix.node }}
+          path: test-results.txt
+          retention-days: 30
+          if-no-files-found: warn
