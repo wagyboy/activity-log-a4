@@ -13,7 +13,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  quality:
+    uses: ./.github/workflows/quality.yml
+
   build:
+    needs: quality
     if: github.repository == 'wagyboy/activity-log-a4' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
