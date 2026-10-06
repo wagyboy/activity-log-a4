@@ -107,7 +107,7 @@ jobs:
             --max-ai-credits 50 \
             --available-tools 'view,grep,glob' \
             --allow-tool read \
-            --deny-tool 'shell,write,url,memory,read(/proc/**),read(/sys/**),read(/dev/**),read(/home/**),read(/root/**)' \
+            --deny-tool "shell,write,url,memory,read(/proc/**),read(/sys/**),read(/dev/**),read(/root/**),read($COPILOT_HOME/**),read(/home/runner/.ssh/**),read(/home/runner/.config/**),read(/home/runner/.copilot/**)" \
             --disable-builtin-mcps \
             --disallow-temp-dir \
             --no-custom-instructions \
