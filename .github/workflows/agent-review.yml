@@ -1,0 +1,187 @@
+name: A4 Guarded Release Review
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    if: github.repository == 'wagyboy/activity-log-a4' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: ai-review
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+
+      - name: Download Node.js 22 test evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: test-log-node-22
+          path: ${{ runner.temp }}/a4-evidence/node-22
+
+      - name: Download Node.js 24 test evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: test-log-node-24
+          path: ${{ runner.temp }}/a4-evidence/node-24
+
+      - name: Download current build evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-artifact
+          path: ${{ runner.temp }}/a4-evidence/build
+
+      - name: Prepare isolated review inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/a4-review-output"
+          node .github/scripts/prepare-release-review.mjs \
+            "$GITHUB_WORKSPACE" "$RUNNER_TEMP/a4-agent-inputs" "$RUNNER_TEMP/a4-evidence"
+          cp .github/prompts/release-review.md "$RUNNER_TEMP/a4-review-output/prompt.md"
+          find "$RUNNER_TEMP/a4-agent-inputs" -type f -print0 \
+            | sort -z | xargs -0 sha256sum > "$RUNNER_TEMP/a4-review-output/input-checksums.txt"
+          chmod -R a-w "$RUNNER_TEMP/a4-agent-inputs"
+
+      - name: Install verified Copilot CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_dir="$RUNNER_TEMP/a4-copilot-bin"
+          mkdir -p "$install_dir"
+          archive="$install_dir/copilot-linux-x64.tar.gz"
+          curl --fail --location --retry 2 --silent --show-error \
+            'https://github.com/github/copilot-cli/releases/download/v1.0.92/copilot-linux-x64.tar.gz' \
+            --output "$archive"
+          printf '%s  %s\n' \
+            '1d8daedb9cdb200061471cabe9f924f80293689cb9c42489344864c044f33ea9' "$archive" \
+            | sha256sum --check -
+          tar --extract --gzip --file="$archive" --directory="$install_dir" \
+            --no-same-owner --no-same-permissions
+          cli="$(find "$install_dir" -type f -name copilot -print -quit)"
+          test -n "$cli"
+          chmod +x "$cli"
+          "$cli" --no-auto-update --version > "$RUNNER_TEMP/a4-review-output/cli-version.txt"
+          "$cli" --no-auto-update --help > "$install_dir/help.txt"
+          for flag in available-tools deny-tool disable-builtin-mcps no-custom-instructions \
+            disallow-temp-dir no-ask-user max-ai-credits share; do
+            grep -q -- "--$flag" "$install_dir/help.txt"
+          done
+          printf '%s\n' "$(dirname "$cli")" >> "$GITHUB_PATH"
+
+      - name: Run guarded release review agent
+        shell: bash
+        env:
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          COPILOT_HOME: ${{ runner.temp }}/a4-copilot-home
+          COPILOT_AUTO_UPDATE: 'false'
+          COPILOT_ALLOW_ALL: 'false'
+          GITHUB_COPILOT_PROMPT_MODE_EXTENSIONS: 'false'
+          GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS: 'false'
+          GITHUB_COPILOT_PROMPT_MODE_WORKSPACE_MCP: 'false'
+          GH_TOKEN: ''
+          GITHUB_TOKEN: ''
+        run: |
+          set -euo pipefail
+          test -n "$COPILOT_GITHUB_TOKEN" || { echo 'Copilot environment secret is missing.'; exit 1; }
+          mkdir -p "$COPILOT_HOME"
+          output="$RUNNER_TEMP/a4-review-output"
+          prompt="$(cat "$output/prompt.md")"
+          cd "$RUNNER_TEMP/a4-agent-inputs"
+          started="$(date +%s)"
+          set +e
+          timeout --signal=TERM --kill-after=20s 300s copilot \
+            --prompt "$prompt" \
+            --model claude-haiku-4.5 \
+            --max-ai-credits 50 \
+            --available-tools 'view,grep,glob' \
+            --allow-tool read \
+            --deny-tool 'shell,write,url,memory,read(/proc/**),read(/sys/**),read(/dev/**),read(/home/**),read(/root/**)' \
+            --disable-builtin-mcps \
+            --disallow-temp-dir \
+            --no-custom-instructions \
+            --no-ask-user \
+            --no-auto-update \
+            --no-experimental \
+            --no-remote \
+            --no-remote-export \
+            --no-banner \
+            --no-color \
+            --stream off \
+            --silent \
+            --share "$output/copilot-session.md" \
+            > "$output/draft-release-review.md" 2> "$output/agent-stderr.txt"
+          agent_exit="$?"
+          set -e
+          export A4_AGENT_EXIT="$agent_exit"
+          export A4_AGENT_SECONDS="$(( $(date +%s) - started ))"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const output = path.join(process.env.RUNNER_TEMP, 'a4-review-output');
+          const credential = process.env.COPILOT_GITHUB_TOKEN;
+          for (const name of ['draft-release-review.md', 'copilot-session.md', 'agent-stderr.txt']) {
+            const file = path.join(output, name);
+            if (fs.existsSync(file)) {
+              const sanitized = fs.readFileSync(file, 'utf8')
+                .replaceAll(credential, '[REDACTED]')
+                .replace(/(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]+/g, '[REDACTED]');
+              fs.writeFileSync(file, sanitized);
+            }
+          }
+          const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+          const metrics = {
+            cli_version: '1.0.92', model: 'claude-haiku-4.5',
+            source_commit: manifest.source_commit, baseline_tag: manifest.baseline_tag,
+            agent_seconds: Number(process.env.A4_AGENT_SECONDS),
+            agent_exit_code: Number(process.env.A4_AGENT_EXIT),
+            response_credit_soft_limit: 50, timeout_seconds: 300,
+            actual_ai_credits: 'Check CLI session details or Copilot usage; not inferred from duration.',
+            tool_use_evidence: 'Review copilot-session.md to verify actual file reads/searches.',
+            human_review: 'Pending; this job cannot approve production.',
+          };
+          fs.writeFileSync(path.join(output, 'agent-metrics.json'), JSON.stringify(metrics, null, 2) + '\n');
+          if (metrics.agent_exit_code !== 0) {
+            throw new Error('Copilot did not complete successfully. Inspect the sanitized artifact logs.');
+          }
+          const draft = fs.readFileSync(path.join(output, 'draft-release-review.md'), 'utf8');
+          const headings = [
+            '# DRAFT - Human review required', '## Draft release notes',
+            '## Evidence and limits', '## Risk review', '## Human review checklist',
+          ];
+          for (const heading of headings) {
+            if (!draft.includes(heading)) throw new Error('Draft is missing a required heading: ' + heading);
+          }
+          if (!draft.includes(manifest.source_commit) || !draft.includes(manifest.baseline_tag)) {
+            throw new Error('Draft does not identify the expected source and baseline.');
+          }
+          if (draft.trim().split(/\s+/).length > 600) throw new Error('Draft exceeds the 600-word limit');
+          if (!fs.existsSync(path.join(output, 'copilot-session.md'))) throw new Error('Agent session evidence is missing');
+          console.log('Draft structure checked. Human factual review is still required.');
+          NODE
+          sha256sum --check "$output/input-checksums.txt"
+          printf '## AI draft ready for human review\n\nSource: %s\n\nAgent execution: %s seconds (not a productivity measure).\n\nRead the draft, session trace, manifest and checksums in the release-review artifact before manually approving production.\n' \
+            "$GITHUB_SHA" "$A4_AGENT_SECONDS" >> "$GITHUB_STEP_SUMMARY"
+          cat "$output/draft-release-review.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save review draft and evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-review-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/a4-review-output/
+            ${{ runner.temp }}/a4-agent-inputs/
+          retention-days: 30
+          if-no-files-found: warn
