@@ -116,7 +116,6 @@ jobs:
             --no-experimental \
             --no-remote \
             --no-remote-export \
-            --no-banner \
             --no-color \
             --stream off \
             --silent \
