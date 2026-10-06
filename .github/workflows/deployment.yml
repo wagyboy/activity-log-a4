@@ -152,8 +152,12 @@ jobs:
             "$TAG" "$release_url" >> "$GITHUB_STEP_SUMMARY"
           cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
 
-  deploy-production:
+  agent-review:
     needs: deploy-staging
+    uses: ./.github/workflows/agent-review.yml
+
+  deploy-production:
+    needs: agent-review
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: production
