@@ -33,6 +33,9 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
 
+      - name: Check release review helper syntax
+        run: node --check .github/scripts/prepare-release-review.mjs
+
       - name: Run unit tests
         id: tests
         shell: bash
