@@ -1,0 +1,105 @@
+name: A4 Deployment Pipeline
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: a4-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'wagyboy/activity-log-a4' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.2'
+
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check source syntax
+        run: node --check src/index.js
+
+      - name: Build action bundle
+        run: bun run build
+
+      - name: Package and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s dist/index.js
+          mkdir -p artifacts
+          zip -r artifacts/build.zip dist action.yml README.md LICENSE
+          cd artifacts
+          sha256sum build.zip > SHA256SUMS
+          printf '## Build result\n\nSource commit: `%s`\n\n' "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          cat SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-artifact
+          path: artifacts/
+          retention-days: 90
+          if-no-files-found: error
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: dev
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: build-artifact
+          path: artifacts
+
+      - name: Verify and release dev build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE_TAG: ${{ vars.BUILD_TAG }}
+          RELEASE_NOTE: ${{ vars.RELEASE_NOTE }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$BASE_TAG" =~ ^dev-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ -z "$RELEASE_NOTE" ]]; then
+            echo 'Configure dev BUILD_TAG and RELEASE_NOTE before deploying.'
+            exit 1
+          fi
+          cd artifacts
+          sha256sum --check SHA256SUMS
+          TAG="${BASE_TAG}-r${GITHUB_RUN_NUMBER}-a${GITHUB_RUN_ATTEMPT}"
+          printf '%s\n\nSource commit: %s\nWorkflow run: https://github.com/%s/actions/runs/%s\n' \
+            "$RELEASE_NOTE" "$SOURCE_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > notes.md
+          release_url="$(gh release create "$TAG" build.zip SHA256SUMS \
+            --target "$SOURCE_SHA" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            --prerelease \
+            --latest=false)"
+          printf '## Dev release\n\nTag: `%s`\n\nRelease: %s\n\n' \
+            "$TAG" "$release_url" >> "$GITHUB_STEP_SUMMARY"
