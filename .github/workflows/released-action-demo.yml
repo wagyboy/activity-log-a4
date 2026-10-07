@@ -14,6 +14,7 @@ jobs:
     if: github.repository == 'wagyboy/activity-log-a4'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    environment: action-demo
     steps:
       - name: Prepare demonstration README
         shell: bash
@@ -27,7 +28,7 @@ jobs:
         uses: wagyboy/activity-log-a4@c5f402124f07026bb10773f657467286ba74ea03 # prod-v1.0.0-r7-a1
         with:
           GITHUB_USERNAME: wagyboy
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.ACTIVITY_GITHUB_TOKEN }}
           EVENT_LIMIT: '5'
           OUTPUT_STYLE: MARKDOWN
           HIDE_DETAILS_ON_PRIVATE_REPOS: 'true'
@@ -40,3 +41,6 @@ jobs:
           set -euo pipefail
           sha256sum --check "$RUNNER_TEMP/a4-demo-readme.sha256"
           printf '## Released action demonstration\n\nVersion: prod-v1.0.0-r7-a1\n\nSource: c5f402124f07026bb10773f657467286ba74ea03\n\nMode: DRY_RUN=true, contents:read\n\nREADME checksum unchanged. Read the activity preview in the preceding action step log.\n' >> "$GITHUB_STEP_SUMMARY"
+
+
+
