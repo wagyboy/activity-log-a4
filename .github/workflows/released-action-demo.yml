@@ -1,0 +1,42 @@
+name: A4 Released Action Demo
+
+on:
+  push:
+    branches: [chore/a4-demo]
+    paths:
+      - '.github/workflows/released-action-demo.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  demo:
+    if: github.repository == 'wagyboy/activity-log-a4'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Prepare demonstration README
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p demo
+          printf '# Released action dry-run demo\n\n<!--START_SECTION:activity-->\n<!--END_SECTION:activity-->\n' > demo/README.md
+          sha256sum demo/README.md > "$RUNNER_TEMP/a4-demo-readme.sha256"
+
+      - name: Try the production-released action
+        uses: wagyboy/activity-log-a4@c5f402124f07026bb10773f657467286ba74ea03 # prod-v1.0.0-r7-a1
+        with:
+          GITHUB_USERNAME: wagyboy
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT_LIMIT: '5'
+          OUTPUT_STYLE: MARKDOWN
+          HIDE_DETAILS_ON_PRIVATE_REPOS: 'true'
+          README_PATH: demo/README.md
+          DRY_RUN: 'true'
+
+      - name: Verify dry run preserved the README
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256sum --check "$RUNNER_TEMP/a4-demo-readme.sha256"
+          printf '## Released action demonstration\n\nVersion: prod-v1.0.0-r7-a1\n\nSource: c5f402124f07026bb10773f657467286ba74ea03\n\nMode: DRY_RUN=true, contents:read\n\nREADME checksum unchanged. Read the activity preview in the preceding action step log.\n' >> "$GITHUB_STEP_SUMMARY"
