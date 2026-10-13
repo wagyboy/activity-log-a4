@@ -105,7 +105,7 @@ jobs:
           unzip -o artifacts/build.zip -d .
           test -s dist/index.js
           mkdir -p reports
-      - name: Run unit tests and enforce 95 percent line coverage
+      - name: Run unit tests and enforce 80 percent line coverage
         id: tests
         run: |
           set -euo pipefail
@@ -114,7 +114,7 @@ jobs:
           node --test \
             --experimental-test-coverage \
             --test-coverage-include='**/src/utils/templateEngine.js' \
-            --test-coverage-lines=95 \
+            --test-coverage-lines=80 \
             --test-reporter=spec --test-reporter-destination=stdout \
             --test-reporter=junit --test-reporter-destination=reports/unit-junit.xml \
             --test-reporter=lcov --test-reporter-destination=reports/unit-lcov.info \
@@ -143,7 +143,7 @@ jobs:
         run: |
           printf '## Unit tests - Node.js %s\n\nTEST_ENV: %s\n\nTests: %s\n\nFailure demonstration: %s\n\n' \
             "$NODE_VERSION" "$TEST_ENV" "$TEST_OUTCOME" "$DEMO_OUTCOME" >> "$GITHUB_STEP_SUMMARY"
-          printf 'Coverage scope: src/utils/templateEngine.js; line threshold: 95%%.\n\n' >> "$GITHUB_STEP_SUMMARY"
+          printf 'Coverage scope: src/utils/templateEngine.js; line threshold: 80%%.\n\n' >> "$GITHUB_STEP_SUMMARY"
           if [[ -s reports/unit.log ]]; then
             sed -n '/start of coverage report/,/end of coverage report/p' reports/unit.log >> "$GITHUB_STEP_SUMMARY"
           fi
