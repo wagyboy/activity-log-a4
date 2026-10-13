@@ -1,5 +1,7 @@
 <h1 align="center" id="title">Activity Log</h1>
 
+[![A5 Testing Pipeline](https://github.com/wagyboy/activity-log-a4/actions/workflows/testing-pipeline.yml/badge.svg?branch=master&event=workflow_dispatch)](https://github.com/wagyboy/activity-log-a4/actions/workflows/testing-pipeline.yml)
+
 ![activity log](https://socialify.git.ci/TheDanniCraft/activity-log/image?forks=1&issues=1&language=1&logo=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F66677362&name=1&owner=1&pattern=Solid&pulls=1&stargazers=1&theme=Auto)
 
 <p align="center">
