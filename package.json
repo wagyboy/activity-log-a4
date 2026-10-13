@@ -9,9 +9,12 @@
 		"yaml": "^2.9.0"
 	},
 	"scripts": {
-		"watch": "ncc build src/index.js --watch --license licenses.txt",
-		"build": "bun install && bunx ncc build src/index.js --license licenses.txt",
-		"lint:commit": "commitlint --last --verbose"
+	    "watch": "ncc build src/index.js --watch --license licenses.txt",
+	    "build": "bun install && bunx ncc build src/index.js --license licenses.txt",
+	    "lint:commit": "commitlint --last --verbose",
+	    "test:unit": "node --test --test-reporter=tap tests/templateEngine.test.js",
+	    "test:integration": "node --test --test-reporter=tap tests/activity.integration.test.js",
+	    "test": "npm run test:unit && npm run test:integration"
 	},
 	"devDependencies": {
 		"@commitlint/cli": "^21.2.3",
